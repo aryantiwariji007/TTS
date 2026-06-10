@@ -9,6 +9,7 @@ import time
 import signal
 import difflib
 import warnings
+from pathlib import Path
 from threading import Event
 import re
 import importlib.metadata
@@ -25,6 +26,15 @@ import fitz
 
 warnings.filterwarnings("ignore", category=UserWarning, module='ebooklib')
 warnings.filterwarnings("ignore", category=FutureWarning, module='ebooklib')
+
+# Dia backend — imported at module level so DIA_VOICES is always available.
+# All torch/CUDA imports inside the backend are deferred, so this never fails
+# on CPU-only installs.
+try:
+    from .backends.dia_backend import DIA_VOICES, synthesise as _dia_synthesise
+except ImportError:
+    DIA_VOICES: dict = {}
+    _dia_synthesise = None
 
 # Global flag to stop the spinner and audio
 stop_spinner = False
@@ -168,6 +178,18 @@ Options:
     --model <path>      Path to kokoro-v1.0.onnx model file (default: ./kokoro-v1.0.onnx)
     --voices <path>     Path to voices-v1.0.bin file (default: ./voices-v1.0.bin)
 
+Dia backend voices (requires CUDA — see INSTALL_DIA.md):
+    --voice british_female   British Female voice (Dia 1.6B fine-tune)
+    --voice british_male     British Male voice (Dia 1.6B fine-tune)
+
+Dia generation parameters:
+    --dia-temperature <float>  Expressiveness / variation (default: 1.3)
+    --dia-top-p <float>        Nucleus sampling (default: 0.90)
+    --dia-top-k <int>          Top-k sampling (default: 45)
+    --dia-guidance <float>     CFG adherence (default: 3.0)
+    --dia-seed <int>           Seed for reproducible output
+    --dia-no-compile           Disable torch.compile() (~40%% slower, faster startup)
+
 Input formats:
     .txt               Text file input
     .epub              EPUB book input (will process chapters)
@@ -187,6 +209,8 @@ Examples:
     kokoro-tts input.epub --split-output ./chunks/ --debug
     kokoro-tts input.txt output.wav --model /path/to/model.onnx --voices /path/to/voices.bin
     kokoro-tts input.txt --model ./models/kokoro-v1.0.onnx --voices ./models/voices-v1.0.bin
+    kokoro-tts input.txt output.wav --voice british_female
+    kokoro-tts input.txt output.wav --voice british_male --dia-seed 42 --dia-temperature 1.6
     """)
 
 def print_supported_languages(model_path="kokoro-v1.0.onnx", voices_path="voices-v1.0.bin"):
@@ -1243,10 +1267,196 @@ def get_valid_options():
         '--debug',
         '--model',
         '--voices',
-        '-v', '--version'
+        '-v', '--version',
+        # Dia backend options
+        '--dia-temperature',
+        '--dia-top-p',
+        '--dia-top-k',
+        '--dia-guidance',
+        '--dia-seed',
+        '--dia-no-compile',
     }
 
 
+
+
+def convert_text_to_audio_dia(input_file, output_file=None, voice="british_female",
+                              stream=False, split_output=None, format="wav", debug=False,
+                              stdin_indicators=None, temperature=1.3, top_p=0.90,
+                              top_k=45, guidance_scale=3.0, seed=None, compile_model=True):
+    global stop_spinner, stop_audio
+
+    if stdin_indicators is None:
+        stdin_indicators = ['/dev/stdin', '-', 'CONIN$']
+
+    if _dia_synthesise is None:
+        print("Error: Dia backend is not available.")
+        print("Install dependencies: pip install -r requirements-dia.txt")
+        sys.exit(1)
+
+    # Verify checkpoint exists before loading the model (fast fail)
+    from .backends.dia_backend import _resolve_ckpt
+    try:
+        _resolve_ckpt(voice)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    # Read input — reuses the same helpers as the Kokoro path
+    if input_file.endswith('.epub'):
+        chapters = extract_chapters_from_epub(input_file, debug)
+        if not chapters:
+            print("No chapters found in EPUB file.")
+            sys.exit(1)
+    elif input_file.endswith('.pdf'):
+        parser = PdfParser(input_file, debug=debug)
+        chapters = parser.get_chapters()
+    else:
+        if input_file in stdin_indicators:
+            text = sys.stdin.read()
+        else:
+            with open(input_file, 'r', encoding='utf-8') as f:
+                text = f.read()
+        chapters = [{'title': 'Chapter 1', 'content': text}]
+
+    dia_kwargs = dict(
+        voice=voice,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        guidance_scale=guidance_scale,
+        seed=seed,
+        compile_model=compile_model,
+    )
+
+    if stream:
+        for chapter in chapters:
+            print(f"\nStreaming: {chapter['title']}")
+            chunks = chunk_text(chapter['content'], initial_chunk_size=500)
+            for i, chunk in enumerate(chunks, 1):
+                if stop_audio:
+                    break
+                stop_spinner = False
+                spinner_thread = threading.Thread(
+                    target=spinning_wheel,
+                    args=(f"Synthesising chunk {i}/{len(chunks)}",)
+                )
+                spinner_thread.start()
+                try:
+                    samples = _dia_synthesise(chunk, **dia_kwargs)
+                    stop_spinner = True
+                    spinner_thread.join()
+                    sd.play(samples, 44100)
+                    sd.wait()
+                except Exception as e:
+                    stop_spinner = True
+                    spinner_thread.join()
+                    print(f"\nError synthesising chunk {i}: {e}")
+                    if debug:
+                        import traceback
+                        traceback.print_exc()
+        print("\nStreaming completed.")
+    elif split_output:
+        os.makedirs(split_output, exist_ok=True)
+        for chapter_num, chapter in enumerate(chapters, 1):
+            chapter_dir = os.path.join(split_output, f"chapter_{chapter_num:03d}")
+            os.makedirs(chapter_dir, exist_ok=True)
+
+            info_file = os.path.join(chapter_dir, "info.txt")
+            if not os.path.exists(info_file):
+                with open(info_file, 'w', encoding='utf-8') as f:
+                    f.write(f"Title: {chapter['title']}\n")
+
+            print(f"\nProcessing: {chapter['title']}")
+            chunks = chunk_text(chapter['content'], initial_chunk_size=500)
+            total_chunks = len(chunks)
+            processed_chunks = len([
+                fn for fn in os.listdir(chapter_dir)
+                if fn.startswith("chunk_") and fn.endswith(f".{format}")
+            ])
+
+            for chunk_num, chunk in enumerate(chunks, 1):
+                if stop_audio:
+                    break
+
+                chunk_file = os.path.join(chapter_dir, f"chunk_{chunk_num:03d}.{format}")
+                if os.path.exists(chunk_file):
+                    continue
+
+                filled = "■" * processed_chunks
+                remaining = "□" * (total_chunks - processed_chunks)
+                progress_bar = f"[{filled}{remaining}] ({processed_chunks}/{total_chunks})"
+
+                stop_spinner = False
+                spinner_thread = threading.Thread(
+                    target=spinning_wheel,
+                    args=(f"Processing {chapter['title']}", progress_bar)
+                )
+                spinner_thread.start()
+
+                try:
+                    samples = _dia_synthesise(chunk, **dia_kwargs)
+                    sf.write(chunk_file, samples, 44100)
+                    processed_chunks += 1
+                except Exception as e:
+                    print(f"\nError processing chunk {chunk_num}: {e}")
+                    if debug:
+                        import traceback
+                        traceback.print_exc()
+
+                stop_spinner = True
+                spinner_thread.join()
+
+                if stop_audio:
+                    break
+
+            print(f"\nCompleted {chapter['title']}: {processed_chunks}/{total_chunks} chunks processed")
+            if stop_audio:
+                break
+
+        print(f"\nCreated audio files for {len(chapters)} chapters in {split_output}/")
+    else:
+        all_samples = []
+
+        for chapter_num, chapter in enumerate(chapters, 1):
+            print(f"\nProcessing: {chapter['title']}")
+            chunks = chunk_text(chapter['content'], initial_chunk_size=500)
+            total_chunks = len(chunks)
+            processed_chunks = 0
+
+            for chunk_num, chunk in enumerate(chunks, 1):
+                if stop_audio:
+                    break
+
+                stop_spinner = False
+                spinner_thread = threading.Thread(
+                    target=spinning_wheel,
+                    args=(f"Processing chunk {chunk_num}/{total_chunks}",)
+                )
+                spinner_thread.start()
+
+                try:
+                    samples = _dia_synthesise(chunk, **dia_kwargs)
+                    all_samples.append(samples)
+                    processed_chunks += 1
+                except Exception as e:
+                    print(f"\nError processing chunk {chunk_num}: {e}")
+                    if debug:
+                        import traceback
+                        traceback.print_exc()
+
+                stop_spinner = True
+                spinner_thread.join()
+
+            print(f"\nCompleted {chapter['title']}: {processed_chunks}/{total_chunks} chunks processed")
+
+        if all_samples:
+            print("\nSaving complete audio file...")
+            combined = np.concatenate(all_samples)
+            if not output_file:
+                output_file = f"{os.path.splitext(input_file)[0]}.{format}"
+            sf.write(output_file, combined, 44100)
+            print(f"Created {output_file}")
 
 
 def main():
@@ -1265,7 +1475,10 @@ def main():
         if arg.startswith('--') and arg not in valid_options:
             unknown_options.append(arg)
             # Skip the next argument if it's a value for an option that takes parameters
-        elif arg in {'--speed', '--lang', '--voice', '--split-output', '--format', '--model', '--voices'}:
+        elif arg in {
+            '--speed', '--lang', '--voice', '--split-output', '--format', '--model', '--voices',
+            '--dia-temperature', '--dia-top-p', '--dia-top-k', '--dia-guidance', '--dia-seed',
+        }:
             i += 1
         i += 1
     
@@ -1310,15 +1523,20 @@ def main():
         # For help commands, we need to parse model/voices paths first
         model_path = "kokoro-v1.0.onnx"  # default model path
         voices_path = "voices-v1.0.bin"  # default voices path
-        
+
         # Parse model/voices paths for help commands
         for i, arg in enumerate(sys.argv):
             if arg == '--model' and i + 1 < len(sys.argv):
                 model_path = sys.argv[i + 1]
             elif arg == '--voices' and i + 1 < len(sys.argv):
                 voices_path = sys.argv[i + 1]
-        
+
         print_supported_voices(model_path, voices_path)
+        if DIA_VOICES:
+            print("\nDia voices (requires CUDA — see INSTALL_DIA.md):")
+            for name, info in DIA_VOICES.items():
+                print(f"    {name}  —  {info['label']}")
+            print()
         sys.exit(0)
     
     # Parse arguments
@@ -1338,7 +1556,15 @@ def main():
     merge_chunks = '--merge-chunks' in sys.argv
     model_path = "kokoro-v1.0.onnx"  # default model path
     voices_path = "voices-v1.0.bin"  # default voices path
-    
+
+    # Dia backend defaults
+    dia_temperature = 1.3
+    dia_top_p = 0.90
+    dia_top_k = 45
+    dia_guidance = 3.0
+    dia_seed = None
+    dia_compile = '--dia-no-compile' not in sys.argv
+
     # Parse optional arguments
     for i, arg in enumerate(sys.argv):
         if arg == '--speed' and i + 1 < len(sys.argv):
@@ -1362,6 +1588,36 @@ def main():
             model_path = sys.argv[i + 1]
         elif arg == '--voices' and i + 1 < len(sys.argv):
             voices_path = sys.argv[i + 1]
+        elif arg == '--dia-temperature' and i + 1 < len(sys.argv):
+            try:
+                dia_temperature = float(sys.argv[i + 1])
+            except ValueError:
+                print("Error: --dia-temperature must be a float")
+                sys.exit(1)
+        elif arg == '--dia-top-p' and i + 1 < len(sys.argv):
+            try:
+                dia_top_p = float(sys.argv[i + 1])
+            except ValueError:
+                print("Error: --dia-top-p must be a float")
+                sys.exit(1)
+        elif arg == '--dia-top-k' and i + 1 < len(sys.argv):
+            try:
+                dia_top_k = int(sys.argv[i + 1])
+            except ValueError:
+                print("Error: --dia-top-k must be an integer")
+                sys.exit(1)
+        elif arg == '--dia-guidance' and i + 1 < len(sys.argv):
+            try:
+                dia_guidance = float(sys.argv[i + 1])
+            except ValueError:
+                print("Error: --dia-guidance must be a float")
+                sys.exit(1)
+        elif arg == '--dia-seed' and i + 1 < len(sys.argv):
+            try:
+                dia_seed = int(sys.argv[i + 1])
+            except ValueError:
+                print("Error: --dia-seed must be an integer")
+                sys.exit(1)
     
     # Handle merge chunks operation
     if merge_chunks:
@@ -1389,12 +1645,22 @@ def main():
     
     # Add debug flag
     debug = '--debug' in sys.argv
-    
-    # Convert text to audio with debug flag
-    convert_text_to_audio(input_file, output_file, voice=voice, stream=stream, 
-                         speed=speed, lang=lang, split_output=split_output, 
-                         format=format, debug=debug, stdin_indicators=stdin_indicators,
-                         model_path=model_path, voices_path=voices_path)
+
+    # Route to Dia backend if a Dia voice was requested
+    if voice in DIA_VOICES:
+        convert_text_to_audio_dia(
+            input_file, output_file, voice=voice, stream=stream,
+            split_output=split_output, format=format, debug=debug,
+            stdin_indicators=stdin_indicators,
+            temperature=dia_temperature, top_p=dia_top_p, top_k=dia_top_k,
+            guidance_scale=dia_guidance, seed=dia_seed, compile_model=dia_compile,
+        )
+    else:
+        # Convert text to audio with debug flag
+        convert_text_to_audio(input_file, output_file, voice=voice, stream=stream,
+                             speed=speed, lang=lang, split_output=split_output,
+                             format=format, debug=debug, stdin_indicators=stdin_indicators,
+                             model_path=model_path, voices_path=voices_path)
 
 
 if __name__ == '__main__':
