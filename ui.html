@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScotAi TTS Studio</title>
+  <style>
+    :root {
+      --bg:      #0a0a0a;
+      --surf:    #121212;
+      --surf2:   #1c1c1c;
+      --border:  #2a2a2a;
+      --accent:  #FBBF24;
+      --glow:    rgba(251,191,36,0.22);
+      --green:   #34d399;
+      --text:    #d4d4d4;
+      --label:   #888888;
+      --dim:     #3a3a3a;
+      --ui:      system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --mono:    'Courier New', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--ui);
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ─── Header ─── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 28px;
+      background: var(--surf);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .logo {
+      font-family: var(--ui);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      color: var(--accent);
+      text-transform: none;
+    }
+    .logo span {
+      color: var(--label);
+      font-weight: 400;
+      letter-spacing: 3px;
+    }
+    .hdr-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .led-row { display: flex; gap: 5px; }
+    .led {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--dim);
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .led.on-green { background: var(--green); box-shadow: 0 0 7px var(--green); }
+    .led.on-amber { background: var(--accent); box-shadow: 0 0 7px var(--glow); animation: blink .7s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+
+    .hdr-status {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 2px;
+      color: var(--label);
+      min-width: 80px;
+      text-align: right;
+      text-transform: uppercase;
+    }
+
+    /* ─── Main ─── */
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      padding: 18px 28px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ─── Panel ─── */
+    .panel {
+      background: var(--surf);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: hidden;
+    }
+    .panel-label {
+      font-family: var(--ui);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      color: var(--label);
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+
+    /* ─── Textarea ─── */
+    #text-input {
+      flex: 1;
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      padding: 12px 14px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #text-input:focus { border-color: var(--accent); }
+    #text-input::placeholder { color: var(--dim); }
+
+    .vinyl-status {
+      display: none;
+    }
+
+    /* ─── Control labels ─── */
+    .ctrl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ctrl-label {
+      font-family: var(--ui);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      color: var(--label);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      text-transform: uppercase;
+    }
+    .ctrl-val {
+      font-family: var(--mono);
+      color: var(--accent);
+      font-size: 9px;
+      letter-spacing: 0;
+    }
+
+    select {
+      width: 100%;
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-family: var(--ui);
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color .2s;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23FBBF24'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
+    }
+    select:focus { border-color: var(--accent); }
+    select option { background: var(--surf2); }
+
+    input[type=range] {
+      width: 100%;
+      -webkit-appearance: none;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--surf2);
+      outline: none;
+      cursor: pointer;
+      border: 1px solid var(--border);
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #fde68a, #d97706);
+      box-shadow: 0 0 6px var(--glow);
+      cursor: grab;
+      transition: box-shadow .2s;
+    }
+    input[type=range]::-webkit-slider-thumb:active {
+      cursor: grabbing;
+      box-shadow: 0 0 14px rgba(251,191,36,0.5);
+    }
+
+    input[type=number] {
+      width: 100%;
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      outline: none;
+      transition: border-color .2s;
+      -moz-appearance: textfield;
+    }
+    input[type=number]:focus { border-color: var(--accent); }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
+    input[type=number]::placeholder { color: var(--dim); }
+
+    .xfade-ends {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--ui);
+      font-size: 8px;
+      color: var(--dim);
+      margin-top: 2px;
+    }
+
+    .sect-divider {
+      border-top: 1px solid var(--border);
+      padding-top: 4px;
+    }
+    .sect-divider .panel-label {
+      border: none;
+      padding: 0 0 8px 0;
+    }
+
+    /* ─── Footer ─── */
+    footer {
+      background: var(--surf);
+      border-top: 1px solid var(--border);
+      padding: 11px 28px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    button {
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--ui);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      padding: 7px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: border-color .15s, color .15s, box-shadow .15s;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    button:active:not(:disabled) { transform: scale(.97); }
+    button:disabled { opacity: .25; cursor: not-allowed; }
+
+    .btn-generate {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #030628;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+    }
+    .btn-generate:hover:not(:disabled) {
+      box-shadow: 0 0 18px var(--glow);
+      color: #030628;
+    }
+    .btn-generate.loading { animation: blink .7s ease-in-out infinite; }
+
+    .sep { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; margin: 0 2px; }
+
+    .progress-track {
+      flex: 1;
+      height: 2px;
+      background: var(--surf2);
+      border-radius: 1px;
+      border: 1px solid var(--border);
+      overflow: visible;
+      cursor: pointer;
+      position: relative;
+    }
+    #progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      border-radius: 1px;
+      transition: width .1s linear;
+      box-shadow: 0 0 8px var(--glow);
+    }
+
+    .time {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--label);
+      min-width: 72px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ScotAi <span>TTS Studio</span></div>
+  <div class="hdr-right">
+    <div class="led-row">
+      <div class="led" id="led1"></div>
+      <div class="led" id="led2"></div>
+      <div class="led" id="led3"></div>
+    </div>
+    <div class="hdr-status" id="hdr-status">Offline</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Script pad ── -->
+  <div class="panel">
+    <div class="panel-label">Script</div>
+    <textarea id="text-input" placeholder="Paste your text here…&#10;&#10;Synthesised in British English."></textarea>
+  </div>
+
+
+  <!-- ── Controls ── -->
+  <div class="panel" style="gap:11px; overflow-y:auto;">
+    <div class="panel-label">Voice</div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label">Voice A <span class="ctrl-val" id="va-gender"></span></div>
+      <select id="voice-a"></select>
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label">Voice B <span style="font-weight:400;color:var(--dim);letter-spacing:0;text-transform:none;font-size:9px">blend target</span></div>
+      <select id="voice-b"></select>
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label">Crossfade <span class="ctrl-val" id="blend-val">A · 100%</span></div>
+      <input type="range" id="blend" min="0" max="100" value="0">
+      <div class="xfade-ends"><span>A</span><span>B</span></div>
+      <div id="blend-note" style="display:none;font-size:9px;color:var(--label);letter-spacing:1px;margin-top:2px;">Blending unavailable for GPU voices</div>
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label">Speed <span class="ctrl-val" id="speed-val">1.25×</span></div>
+      <input type="range" id="speed" min="50" max="200" value="125" step="5">
+      <div class="xfade-ends"><span>0.5×</span><span>2.0×</span></div>
+      <div id="speed-note" style="display:none;font-size:9px;color:var(--label);letter-spacing:1px;margin-top:2px;">Speed unused for GPU — use Tempo instead</div>
+    </div>
+
+    <!-- ── GPU Parameters ── -->
+    <div id="gpu-params" class="sect-divider" style="display:none;">
+      <div class="panel-label">GPU Parameters</div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Temperature <span class="ctrl-val" id="gpu-temp-val">1.30</span></div>
+        <input type="range" id="gpu-temp" min="50" max="200" value="130" step="5">
+        <div class="xfade-ends"><span>0.50</span><span>2.00</span></div>
+      </div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Top P <span class="ctrl-val" id="gpu-topp-val">0.90</span></div>
+        <input type="range" id="gpu-topp" min="50" max="100" value="90" step="1">
+        <div class="xfade-ends"><span>0.50</span><span>1.00</span></div>
+      </div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Top K <span class="ctrl-val" id="gpu-topk-val">45</span></div>
+        <input type="range" id="gpu-topk" min="10" max="100" value="45" step="1">
+        <div class="xfade-ends"><span>10</span><span>100</span></div>
+      </div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Guidance <span class="ctrl-val" id="gpu-cfg-val">3.0×</span></div>
+        <input type="range" id="gpu-cfg" min="10" max="100" value="30" step="5">
+        <div class="xfade-ends"><span>1.0</span><span>10.0</span></div>
+      </div>
+
+      <div class="ctrl-row">
+        <div class="ctrl-label">Seed <span style="font-weight:400;color:var(--dim);letter-spacing:0;text-transform:none;font-size:9px">blank = random</span></div>
+        <input type="number" id="gpu-seed" placeholder="random" min="0" max="2147483647" step="1">
+      </div>
+    </div>
+
+    <div class="sect-divider">
+      <div class="panel-label">Effects</div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Pitch <span class="ctrl-val" id="pitch-val">-2 st</span></div>
+        <input type="range" id="pitch" min="-8" max="8" value="-2" step="1">
+        <div class="xfade-ends"><span>−8 st</span><span>+8 st</span></div>
+      </div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Bass <span class="ctrl-val" id="bass-val">-9 dB</span></div>
+        <input type="range" id="bass" min="-9" max="9" value="-9" step="1">
+        <div class="xfade-ends"><span>−9 dB</span><span>+9 dB</span></div>
+      </div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Treble <span class="ctrl-val" id="treble-val">-9 dB</span></div>
+        <input type="range" id="treble" min="-9" max="9" value="-9" step="1">
+        <div class="xfade-ends"><span>−9 dB</span><span>+9 dB</span></div>
+      </div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Warmth <span class="ctrl-val" id="warmth-val">0%</span></div>
+        <input type="range" id="warmth" min="0" max="100" value="0" step="5">
+        <div class="xfade-ends"><span>dry</span><span>warm</span></div>
+      </div>
+
+      <div class="ctrl-row">
+        <div class="ctrl-label">Room <span class="ctrl-val" id="room-val">0%</span></div>
+        <input type="range" id="room" min="0" max="100" value="0" step="5">
+        <div class="xfade-ends"><span>dry</span><span>hall</span></div>
+      </div>
+
+      <div class="ctrl-row" style="margin-bottom:9px;">
+        <div class="ctrl-label">Tempo <span class="ctrl-val" id="tempo-val">1.00x</span></div>
+        <input type="range" id="tempo" min="40" max="200" value="100" step="5">
+        <div class="xfade-ends"><span>0.4x</span><span>2.0x</span></div>
+      </div>
+
+      <div class="ctrl-row">
+        <div class="ctrl-label">Vibrato <span class="ctrl-val" id="vibrato-val">0%</span></div>
+        <input type="range" id="vibrato" min="0" max="100" value="0" step="5">
+        <div class="xfade-ends"><span>off</span><span>deep</span></div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<footer>
+  <button class="btn-generate" id="btn-gen">Generate</button>
+  <div class="sep"></div>
+  <button id="btn-play"  disabled>▶ Play</button>
+  <button id="btn-pause" disabled>‖ Pause</button>
+  <button id="btn-stop"  disabled>■ Stop</button>
+  <div class="sep"></div>
+  <button id="btn-dl"    disabled>⬇ Download</button>
+  <div class="sep"></div>
+  <button id="btn-reset">↺ Reset</button>
+  <div class="sep"></div>
+  <div class="progress-track" id="prog-track">
+    <div id="progress-fill"></div>
+  </div>
+  <div class="time" id="time-disp">0:00 / 0:00</div>
+</footer>
+
+<audio id="player"></audio>
+
+<script>
+  // [id, display name, sex, backend]
+  const VOICES = [
+    ['bf_isabella',    'Isabella',       'F', 'kokoro'],
+    ['bf_lily',        'Lily',           'F', 'kokoro'],
+    ['bm_fable',       'Fable',          'M', 'kokoro'],
+    ['bm_lewis',       'Lewis',          'M', 'kokoro'],
+    ['bf_alice',       'Alice',          'F', 'kokoro'],
+    ['bm_daniel',      'Daniel',         'M', 'kokoro'],
+    ['british_female', 'Brit. Female',   'F', 'dia'],
+    ['british_male',   'Brit. Male',     'M', 'dia'],
+  ];
+
+  const selA = document.getElementById('voice-a');
+  const selB = document.getElementById('voice-b');
+
+  VOICES.forEach(([id, name, sex, backend], i) => {
+    const sym   = sex === 'F' ? '♀' : '♂';
+    const label = backend === 'dia' ? `${name} ${sym} · GPU` : `${name} ${sym}`;
+    selA.add(new Option(label, id, false, i === 0));
+    selB.add(new Option(label, id, false, i === 1));
+  });
+
+  function isGpu(id) { return (VOICES.find(v => v[0] === id) || [])[3] === 'dia'; }
+
+  function genderTag(id) {
+    const v = VOICES.find(v => v[0] === id);
+    return v ? (v[2] === 'F' ? '♀' : '♂') : '';
+  }
+
+  const vaGender     = document.getElementById('va-gender');
+  const blendNote    = document.getElementById('blend-note');
+  const gpuParamsDiv = document.getElementById('gpu-params');
+  const speedNoteDiv = document.getElementById('speed-note');
+
+  // Sliders — declared before updateBlendState so they're in scope when it runs
+  const blendSlider   = document.getElementById('blend');
+  const blendVal      = document.getElementById('blend-val');
+  const speedSlider   = document.getElementById('speed');
+  const speedVal      = document.getElementById('speed-val');
+  const pitchSlider   = document.getElementById('pitch');
+  const pitchVal      = document.getElementById('pitch-val');
+  const bassSlider    = document.getElementById('bass');
+  const bassVal       = document.getElementById('bass-val');
+  const trebleSlider  = document.getElementById('treble');
+  const trebleVal     = document.getElementById('treble-val');
+  const warmthSlider  = document.getElementById('warmth');
+  const warmthVal     = document.getElementById('warmth-val');
+  const roomSlider    = document.getElementById('room');
+  const roomVal       = document.getElementById('room-val');
+  const tempoSlider   = document.getElementById('tempo');
+  const tempoVal      = document.getElementById('tempo-val');
+  const vibratoSlider = document.getElementById('vibrato');
+  const vibratoVal    = document.getElementById('vibrato-val');
+  const gpuTempSlider = document.getElementById('gpu-temp');
+  const gpuTempVal    = document.getElementById('gpu-temp-val');
+  const gpuTopPSlider = document.getElementById('gpu-topp');
+  const gpuTopPVal    = document.getElementById('gpu-topp-val');
+  const gpuTopKSlider = document.getElementById('gpu-topk');
+  const gpuTopKVal    = document.getElementById('gpu-topk-val');
+  const gpuCfgSlider  = document.getElementById('gpu-cfg');
+  const gpuCfgVal     = document.getElementById('gpu-cfg-val');
+  const gpuSeedInput  = document.getElementById('gpu-seed');
+
+  function updateBlendState() {
+    const aIsDia    = isGpu(selA.value);
+    const anyDia    = aIsDia || isGpu(selB.value);
+    blendSlider.disabled        = anyDia;
+    blendNote.style.display     = anyDia ? 'block' : 'none';
+    if (anyDia) {
+      blendSlider.value    = 0;
+      blendVal.textContent = 'A · 100%';
+    }
+    gpuParamsDiv.style.display = anyDia  ? 'block' : 'none';
+    speedNoteDiv.style.display = aIsDia  ? 'block' : 'none';
+    speedSlider.disabled       = aIsDia;
+  }
+
+  selA.addEventListener('change', () => {
+    vaGender.textContent = genderTag(selA.value);
+    updateBlendState();
+  });
+  selB.addEventListener('change', () => { updateBlendState(); });
+
+  vaGender.textContent = genderTag(selA.value);
+  updateBlendState();
+
+  blendSlider.addEventListener('input', () => {
+    const v = +blendSlider.value;
+    blendVal.textContent = v === 0 ? 'A · 100%' : v === 100 ? 'B · 100%' : `A ${100-v}% / B ${v}%`;
+  });
+  speedSlider.addEventListener('input', () => {
+    speedVal.textContent = (+speedSlider.value / 100).toFixed(2) + '×';
+  });
+  pitchSlider.addEventListener('input', () => {
+    const v = +pitchSlider.value;
+    pitchVal.textContent = (v >= 0 ? '+' : '') + v + ' st';
+  });
+  bassSlider.addEventListener('input', () => {
+    const v = +bassSlider.value;
+    bassVal.textContent = (v >= 0 ? '+' : '') + v + ' dB';
+  });
+  trebleSlider.addEventListener('input', () => {
+    const v = +trebleSlider.value;
+    trebleVal.textContent = (v >= 0 ? '+' : '') + v + ' dB';
+  });
+  warmthSlider.addEventListener('input', () => {
+    warmthVal.textContent = warmthSlider.value + '%';
+  });
+  roomSlider.addEventListener('input', () => {
+    roomVal.textContent = roomSlider.value + '%';
+  });
+  tempoSlider.addEventListener('input', () => {
+    tempoVal.textContent = (tempoSlider.value / 100).toFixed(2) + 'x';
+  });
+  vibratoSlider.addEventListener('input', () => {
+    vibratoVal.textContent = vibratoSlider.value + '%';
+  });
+  gpuTempSlider.addEventListener('input', () => {
+    gpuTempVal.textContent = (+gpuTempSlider.value / 100).toFixed(2);
+  });
+  gpuTopPSlider.addEventListener('input', () => {
+    gpuTopPVal.textContent = (+gpuTopPSlider.value / 100).toFixed(2);
+  });
+  gpuTopKSlider.addEventListener('input', () => {
+    gpuTopKVal.textContent = gpuTopKSlider.value;
+  });
+  gpuCfgSlider.addEventListener('input', () => {
+    gpuCfgVal.textContent = (+gpuCfgSlider.value / 10).toFixed(1) + '×';
+  });
+
+  function resetDefaults() {
+    selA.value = 'bf_isabella';
+    selB.value = 'bf_lily';
+    vaGender.textContent = genderTag(selA.value);
+
+    blendSlider.value     = 0;    blendVal.textContent  = 'A · 100%';
+    speedSlider.value     = 125;  speedVal.textContent  = '1.25×';
+    pitchSlider.value     = -2;   pitchVal.textContent  = '-2 st';
+    bassSlider.value      = -9;   bassVal.textContent   = '-9 dB';
+    trebleSlider.value    = -9;   trebleVal.textContent = '-9 dB';
+    warmthSlider.value    = 0;    warmthVal.textContent = '0%';
+    roomSlider.value      = 0;    roomVal.textContent   = '0%';
+    tempoSlider.value     = 100;  tempoVal.textContent  = '1.00x';
+    vibratoSlider.value   = 0;    vibratoVal.textContent = '0%';
+    gpuTempSlider.value   = 130;  gpuTempVal.textContent = '1.30';
+    gpuTopPSlider.value   = 90;   gpuTopPVal.textContent = '0.90';
+    gpuTopKSlider.value   = 45;   gpuTopKVal.textContent = '45';
+    gpuCfgSlider.value    = 30;   gpuCfgVal.textContent  = '3.0×';
+    gpuSeedInput.value    = '';
+
+    updateBlendState();
+  }
+
+  document.getElementById('btn-reset').addEventListener('click', resetDefaults);
+
+  // Elements
+  const hStatus   = document.getElementById('hdr-status');
+  const led1      = document.getElementById('led1');
+  const led2      = document.getElementById('led2');
+  const led3      = document.getElementById('led3');
+  const progFill  = document.getElementById('progress-fill');
+  const progTrack = document.getElementById('prog-track');
+  const timeDisp  = document.getElementById('time-disp');
+  const player    = document.getElementById('player');
+  const btnGen    = document.getElementById('btn-gen');
+  const btnPlay   = document.getElementById('btn-play');
+  const btnPause  = document.getElementById('btn-pause');
+  const btnStop   = document.getElementById('btn-stop');
+  const btnDl     = document.getElementById('btn-dl');
+
+  let audioBlob = null;
+
+  function setLeds(mode) {
+    led1.className = led2.className = led3.className = 'led';
+    if (mode === 'ready')   { led1.classList.add('on-green'); }
+    if (mode === 'working') { led1.classList.add('on-amber'); led2.classList.add('on-amber'); led3.classList.add('on-amber'); }
+    if (mode === 'playing') { led1.classList.add('on-green'); led2.classList.add('on-green'); led3.classList.add('on-green'); }
+    if (mode === 'paused')  { led1.classList.add('on-green'); led2.classList.add('on-amber'); }
+  }
+
+  function setState(s) {
+    setLeds(s);
+    const labels = { idle:'Ready', ready:'Ready', working:'Generating', playing:'Playing', paused:'Paused', error:'Error' };
+    hStatus.textContent = labels[s] || s;
+  }
+
+  function fmt(s) {
+    const m = Math.floor(s / 60), sec = Math.floor(s % 60).toString().padStart(2, '0');
+    return `${m}:${sec}`;
+  }
+
+  player.addEventListener('timeupdate', () => {
+    if (player.duration) {
+      progFill.style.width = (player.currentTime / player.duration * 100) + '%';
+      timeDisp.textContent = `${fmt(player.currentTime)} / ${fmt(player.duration)}`;
+    }
+  });
+
+  player.addEventListener('ended', () => {
+    setState('ready');
+    btnPlay.disabled = false; btnPause.disabled = true; btnStop.disabled = true;
+  });
+
+  progTrack.addEventListener('click', e => {
+    if (!player.duration) return;
+    const r = progTrack.getBoundingClientRect();
+    player.currentTime = ((e.clientX - r.left) / r.width) * player.duration;
+  });
+
+  btnGen.addEventListener('click', async () => {
+    const text = document.getElementById('text-input').value.trim();
+    if (!text) { alert('Please enter some text first.'); return; }
+
+    setState('working');
+    btnGen.classList.add('loading');
+    btnGen.disabled = true;
+    btnPlay.disabled = btnPause.disabled = btnStop.disabled = btnDl.disabled = true;
+    progFill.style.width = '0%';
+    timeDisp.textContent = '0:00 / 0:00';
+
+    try {
+      const res = await fetch('/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          voice_a: selA.value,
+          voice_b: selB.value,
+          blend:   +blendSlider.value / 100,
+          speed:   +speedSlider.value / 100,
+          pitch:   +pitchSlider.value,
+          bass:    +bassSlider.value,
+          treble:  +trebleSlider.value,
+          warmth:  +warmthSlider.value / 100,
+          reverb:  +roomSlider.value / 100 * 0.55,
+          room:    +roomSlider.value / 100,
+          tempo:   +tempoSlider.value / 100,
+          vibrato:         +vibratoSlider.value / 100,
+          dia_temperature: +gpuTempSlider.value / 100,
+          dia_top_p:       +gpuTopPSlider.value / 100,
+          dia_top_k:       +gpuTopKSlider.value,
+          dia_guidance:    +gpuCfgSlider.value / 10,
+          dia_seed:        gpuSeedInput.value !== '' ? +gpuSeedInput.value : null,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Server error' }));
+        throw new Error(err.error || 'Generation failed');
+      }
+
+      audioBlob = await res.blob();
+      player.src = URL.createObjectURL(audioBlob);
+      player.load();
+
+      setState('ready');
+      btnPlay.disabled = false;
+      btnStop.disabled = false;
+      btnDl.disabled   = false;
+    } catch (e) {
+      setState('error');
+      alert('Generation failed: ' + e.message);
+    } finally {
+      btnGen.classList.remove('loading');
+      btnGen.disabled = false;
+    }
+  });
+
+  btnPlay.addEventListener('click', () => {
+    player.play();
+    setState('playing');
+    btnPlay.disabled = true; btnPause.disabled = false; btnStop.disabled = false;
+  });
+
+  btnPause.addEventListener('click', () => {
+    player.pause();
+    setState('paused');
+    btnPlay.disabled = false; btnPause.disabled = true;
+  });
+
+  btnStop.addEventListener('click', () => {
+    player.pause();
+    player.currentTime = 0;
+    setState('ready');
+    progFill.style.width = '0%';
+    timeDisp.textContent = '0:00 / 0:00';
+    btnPlay.disabled = false; btnPause.disabled = true; btnStop.disabled = true;
+  });
+
+  btnDl.addEventListener('click', () => {
+    if (!audioBlob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(audioBlob);
+    a.download = 'scot-ai-tts.wav';
+    a.click();
+  });
+
+  setState('ready');
+</script>
+</body>
+</html>

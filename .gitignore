@@ -1,28 +1,40 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
 *.egg-info
-test.*
 .venv
 *.bkp
+
+# Audio output
 *.wav
 *.mp3
 book_audio/
 chunks/
 
+# ML model binaries (large files — not tracked in git)
 *.npz
 *.bin
 *.onnx
+*.safetensors
+*.pth
+
+# Server logs
+server.log
+server_err.log
+
+# Claude / AI tooling
+.claude/
 
 # macOS
 .DS_Store
 
-# book files
+# Misc
 *.epub
 *.txt
 *.pdf
 !requirements.txt
+!requirements-dia.txt
 !demo.*
