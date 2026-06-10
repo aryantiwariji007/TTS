@@ -357,8 +357,8 @@
     </div>
 
     <div class="ctrl-row">
-      <div class="ctrl-label">Speed <span class="ctrl-val" id="speed-val">1.25×</span></div>
-      <input type="range" id="speed" min="50" max="200" value="125" step="5">
+      <div class="ctrl-label">Speed <span class="ctrl-val" id="speed-val">1.15×</span></div>
+      <input type="range" id="speed" min="50" max="200" value="115" step="5">
       <div class="xfade-ends"><span>0.5×</span><span>2.0×</span></div>
       <div id="speed-note" style="display:none;font-size:9px;color:var(--label);letter-spacing:1px;margin-top:2px;">Speed unused for GPU — use Tempo instead</div>
     </div>
@@ -469,24 +469,27 @@
 <script>
   // [id, display name, sex, backend]
   const VOICES = [
-    ['bf_isabella',    'Isabella',       'F', 'kokoro'],
-    ['bf_lily',        'Lily',           'F', 'kokoro'],
-    ['bm_fable',       'Fable',          'M', 'kokoro'],
-    ['bm_lewis',       'Lewis',          'M', 'kokoro'],
-    ['bf_alice',       'Alice',          'F', 'kokoro'],
-    ['bm_daniel',      'Daniel',         'M', 'kokoro'],
-    ['british_female', 'Brit. Female',   'F', 'dia'],
-    ['british_male',   'Brit. Male',     'M', 'dia'],
+    ['bf_isabella',    'Isabella',       'F', 'kokoro', false],
+    ['bf_lily',        'Lily',           'F', 'kokoro', false],
+    ['bm_fable',       'Fable',          'M', 'kokoro', false],
+    ['bm_lewis',       'Lewis',          'M', 'kokoro', false],
+    ['bf_alice',       'Alice',          'F', 'kokoro', false],
+    ['bm_daniel',      'Daniel',         'M', 'kokoro', false],
+    ['british_female', '— Coming Soon — Brit. Female', 'F', 'dia', true],
+    ['british_male',   '— Coming Soon — Brit. Male',   'M', 'dia', true],
   ];
 
   const selA = document.getElementById('voice-a');
   const selB = document.getElementById('voice-b');
 
-  VOICES.forEach(([id, name, sex, backend], i) => {
+  VOICES.forEach(([id, name, sex, backend, disabled]) => {
     const sym   = sex === 'F' ? '♀' : '♂';
     const label = backend === 'dia' ? `${name} ${sym} · GPU` : `${name} ${sym}`;
-    selA.add(new Option(label, id, false, i === 0));
-    selB.add(new Option(label, id, false, i === 1));
+    const optA  = new Option(label, id, false, id === 'bm_lewis' && !disabled);
+    const optB  = new Option(label, id, false, id === 'bf_lily'  && !disabled);
+    if (disabled) { optA.disabled = true; optB.disabled = true; }
+    selA.add(optA);
+    selB.add(optB);
   });
 
   function isGpu(id) { return (VOICES.find(v => v[0] === id) || [])[3] === 'dia'; }
@@ -598,12 +601,12 @@
   });
 
   function resetDefaults() {
-    selA.value = 'bf_isabella';
+    selA.value = 'bm_lewis';
     selB.value = 'bf_lily';
     vaGender.textContent = genderTag(selA.value);
 
     blendSlider.value     = 0;    blendVal.textContent  = 'A · 100%';
-    speedSlider.value     = 125;  speedVal.textContent  = '1.25×';
+    speedSlider.value     = 115;  speedVal.textContent  = '1.15×';
     pitchSlider.value     = -2;   pitchVal.textContent  = '-2 st';
     bassSlider.value      = -9;   bassVal.textContent   = '-9 dB';
     trebleSlider.value    = -9;   trebleVal.textContent = '-9 dB';
