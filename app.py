@@ -39,6 +39,7 @@ VOICES_PATH = os.path.join(SCRIPT_DIR, 'voices-v1.0.bin')
 app = Flask(__name__, static_folder=SCRIPT_DIR, static_url_path='')
 
 _kokoro = None
+_primer_lens: dict = {}   # cache: (voice_key, speed) → primer sample count
 
 def get_kokoro():
     global _kokoro
@@ -279,12 +280,26 @@ def generate():
         else:
             voice = voice_a
         sr = 24000
+        # Measure the ". " primer once per (voice, speed) and cache the length.
+        # We generate ". " + chunk so the decoder has audio context before the
+        # first real word, then strip exactly the primer portion from the output.
+        v_key = (id(voice) if isinstance(voice, np.ndarray) else voice, round(speed, 2))
+        if v_key not in _primer_lens:
+            p_audio, p_sr = k.create('. ', voice=voice, speed=speed, lang='en-gb')
+            _primer_lens[v_key] = len(p_audio)
+            print(f"  Kokoro primer cached: {_primer_lens[v_key]} samples at {p_sr} Hz", flush=True)
+        primer_len = _primer_lens[v_key]
+
+        print(f"  Kokoro voice: {voice}  speed={speed}", flush=True)
         for chunk in split_text(text):
             try:
-                # Prepend ". " so Kokoro's decoder starts after a sentence
-                # boundary; without this the first 4-6 words are near-silent
-                # because the autoregressive model hasn't accumulated context.
                 samples, sr = k.create('. ' + chunk, voice=voice, speed=speed, lang='en-gb')
+                # Strip the primer, keeping only the actual-text audio.
+                if len(samples) > primer_len + sr // 4:   # sanity: at least 0.25s left
+                    samples = samples[primer_len:]
+                    # 10 ms fade-in to prevent a click at the cut point
+                    fi = min(int(0.01 * sr), len(samples))
+                    samples[:fi] = samples[:fi] * np.linspace(0.0, 1.0, fi)
                 all_samples.extend(samples.tolist() if hasattr(samples, 'tolist') else list(samples))
             except Exception as e:
                 print(f"  Chunk error: {e}")
