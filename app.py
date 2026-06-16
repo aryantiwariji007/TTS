@@ -39,7 +39,6 @@ VOICES_PATH = os.path.join(SCRIPT_DIR, 'voices-v1.0.bin')
 app = Flask(__name__, static_folder=SCRIPT_DIR, static_url_path='')
 
 _kokoro = None
-_primer_lens: dict = {}   # cache: (voice_key, speed) → primer sample count
 
 def get_kokoro():
     global _kokoro
@@ -236,8 +235,8 @@ def generate():
     warmth  = max(0.0, min(1.0, float(data.get('warmth', 0.0))))
     tempo   = max(0.4, min(2.0, float(data.get('tempo',  1.0))))
     vibrato         = max(0.0, min(1.0,  float(data.get('vibrato',         0.0))))
-    dia_temperature = max(0.5, min(2.0,  float(data.get('dia_temperature', 1.3))))
-    dia_top_p       = max(0.5, min(1.0,  float(data.get('dia_top_p',       0.90))))
+    dia_temperature = max(0.5, min(2.0,  float(data.get('dia_temperature', 1.2))))
+    dia_top_p       = max(0.5, min(1.0,  float(data.get('dia_top_p',       0.95))))
     dia_top_k       = max(1,   min(200,  int(float(data.get('dia_top_k',   45)))))
     dia_guidance    = max(1.0, min(10.0, float(data.get('dia_guidance',    3.0))))
     dia_seed_raw    = data.get('dia_seed')
@@ -262,7 +261,8 @@ def generate():
                                temperature=dia_temperature, top_p=dia_top_p,
                                top_k=dia_top_k, guidance_scale=dia_guidance,
                                seed=dia_seed)
-                all_samples.extend(s.tolist() if hasattr(s, 'tolist') else list(s))
+                if s is not None and len(s) > 0:
+                    all_samples.extend(s.tolist() if hasattr(s, 'tolist') else list(s))
             except Exception as e:
                 print(f"  Dia chunk error: {e}")
                 dia_error = str(e)
@@ -280,26 +280,14 @@ def generate():
         else:
             voice = voice_a
         sr = 24000
-        # Measure the ". " primer once per (voice, speed) and cache the length.
-        # We generate ". " + chunk so the decoder has audio context before the
-        # first real word, then strip exactly the primer portion from the output.
-        v_key = (id(voice) if isinstance(voice, np.ndarray) else voice, round(speed, 2))
-        if v_key not in _primer_lens:
-            p_audio, p_sr = k.create('. ', voice=voice, speed=speed, lang='en-gb')
-            _primer_lens[v_key] = len(p_audio)
-            print(f"  Kokoro primer cached: {_primer_lens[v_key]} samples at {p_sr} Hz", flush=True)
-        primer_len = _primer_lens[v_key]
-
         print(f"  Kokoro voice: {voice}  speed={speed}", flush=True)
         for chunk in split_text(text):
             try:
-                samples, sr = k.create('. ' + chunk, voice=voice, speed=speed, lang='en-gb')
-                # Strip the primer, keeping only the actual-text audio.
-                if len(samples) > primer_len + sr // 4:   # sanity: at least 0.25s left
-                    samples = samples[primer_len:]
-                    # 10 ms fade-in to prevent a click at the cut point
-                    fi = min(int(0.01 * sr), len(samples))
-                    samples[:fi] = samples[:fi] * np.linspace(0.0, 1.0, fi)
+                samples, sr = k.create(chunk, voice=voice, speed=speed, lang='en-gb')
+                # 20 ms fade-in to smooth any cold-start onset from the decoder.
+                samples = samples.copy()
+                fi = min(int(0.020 * sr), len(samples))
+                samples[:fi] = samples[:fi] * np.linspace(0.0, 1.0, fi)
                 all_samples.extend(samples.tolist() if hasattr(samples, 'tolist') else list(samples))
             except Exception as e:
                 print(f"  Chunk error: {e}")

@@ -60,48 +60,114 @@ def _load_model(voice: str):
     ckpt_path  = model_dir / "ckpt_epoch4.pth"
     config_path = _ensure_config(model_dir)
 
-    print(f"Loading GPU voice model for {voice} onto CPU first (saves VRAM)…", flush=True)
-    # Load on CPU to avoid VRAM OOM: float32 checkpoint is 6.4 GB, RTX 3050 has only 4 GB.
-    # float16 halves the model to ~3.2 GB; loading to CPU first prevents double-allocation.
+    print(f"Loading GPU voice model for {voice}…", flush=True)
     model = Dia.from_local(
         config_path=str(config_path),
         checkpoint_path=str(ckpt_path),
-        compute_dtype="float16",
-        device=torch.device("cpu"),
+        compute_dtype="float32",
+        device=torch.device("cuda"),
     )
-    print("Moving model to CUDA…", flush=True)
-    model.model.to(torch.device("cuda"))
-    model.device = torch.device("cuda")
-    if hasattr(model, "dac_model") and model.dac_model is not None:
-        model.dac_model.to(torch.device("cuda"))
 
     _models[voice] = model
     print(f"GPU voice model for {voice} ready.", flush=True)
     return model
 
 
-def synthesise(text: str, voice: str, **kwargs) -> np.ndarray:
+def _trim_trailing_loop(audio: np.ndarray, sr: int,
+                        silence_ms: int = 400,
+                        threshold: float = 0.008) -> np.ndarray:
+    """Cut audio at the first silence ≥ silence_ms after speech starts.
+
+    The fine-tuned Dia models never emit a natural EOS, so they loop at the
+    end of each chunk.  A gap ≥ 400 ms marks the end of real speech; everything
+    after that is the loop restart and should be discarded.
+    """
+    if len(audio) == 0:
+        return audio
+    win = int(sr * 0.025)              # 25 ms analysis window
+    min_sil = max(1, silence_ms // 25) # frames needed to declare silence
+    n_frames = len(audio) // win
+    if n_frames == 0:
+        return audio
+
+    rms = np.array([
+        float(np.sqrt(np.mean(audio[i * win:(i + 1) * win].astype(np.float64) ** 2)))
+        for i in range(n_frames)
+    ])
+
+    speech_started = False
+    sil_run = 0
+    for i, r in enumerate(rms):
+        if not speech_started:
+            if r > threshold:
+                speech_started = True
+        else:
+            if r < threshold:
+                sil_run += 1
+                if sil_run >= min_sil:
+                    cut = (i - sil_run + 1) * win
+                    return audio[:cut]
+            else:
+                sil_run = 0
+    return audio
+
+
+def synthesise(
+    text: str,
+    voice: str,
+    *,
+    temperature: float = 1.2,
+    top_p: float = 0.95,
+    top_k: int = 45,
+    guidance_scale: float = 3.0,
+    seed: int | None = None,
+    compile_model: bool = False,
+    **_,
+) -> np.ndarray:
     if voice not in DIA_VOICES:
         raise ValueError(f"Unknown GPU voice: {voice!r}.")
 
+    import re
     speaker = DIA_VOICES[voice]["speaker"]
     model   = _load_model(voice)
 
+    # Normalise text: expand ellipsis, collapse whitespace
+    text = re.sub(r'\.{2,}', '. ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+
     tagged     = f"{speaker} {text}"
     word_count = len(text.split())
-    # Budget: ~86 codec frames per second, Dia speaks ~1.4 wps.
-    # Allow 1.25× expected duration — enough for natural pacing variance
-    # without letting loops run long before the hard stop.
-    max_tokens = max(256, min(3072, int(word_count / 1.4 * 86 * 1.25)))
-    print(f"  GPU generating ({word_count}w, {max_tokens}tok): {tagged[:70]}", flush=True)
+    # Budget: ~86 codec frames/s at 44100 Hz. Keep budget ≥860 tokens (~10 s);
+    # values below ~800 cause the model to produce silence on many inputs.
+    max_tokens = max(860, min(3072, int(word_count / 1.8 * 86 * 1.3)))
+    print(f"  GPU generating ({word_count}w, {max_tokens}tok, T={temperature}): {tagged[:70]}", flush=True)
 
-    audio = model.generate(tagged, max_tokens=max_tokens, use_torch_compile=False)
+    import torch
+    if seed is not None:
+        torch.manual_seed(seed)
+
+    audio = model.generate(
+        tagged,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        cfg_scale=guidance_scale,
+        cfg_filter_top_k=top_k,
+        use_torch_compile=compile_model,
+    )
+
+    if audio is None or (hasattr(audio, 'size') and audio.size == 0):
+        print("  GPU returned empty audio — skipping chunk", flush=True)
+        return np.zeros(0, dtype=np.float32)
 
     if not isinstance(audio, np.ndarray):
-        audio = np.array(audio)
+        audio = np.array(audio, dtype=np.float32)
     audio = audio.astype(np.float32)
     if audio.ndim > 1:
         audio = audio.squeeze()
 
-    print(f"  GPU done: {len(audio)/SAMPLE_RATE:.1f}s", flush=True)
+    raw_dur = len(audio) / SAMPLE_RATE
+    audio = _trim_trailing_loop(audio, SAMPLE_RATE)
+    peak = float(np.max(np.abs(audio))) if audio.size > 0 else 0.0
+    print(f"  GPU done: {raw_dur:.1f}s → {len(audio)/SAMPLE_RATE:.1f}s trimmed  peak={peak:.4f}", flush=True)
     return audio

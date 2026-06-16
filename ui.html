@@ -357,8 +357,8 @@
     </div>
 
     <div class="ctrl-row">
-      <div class="ctrl-label">Speed <span class="ctrl-val" id="speed-val">1.15×</span></div>
-      <input type="range" id="speed" min="50" max="200" value="115" step="5">
+      <div class="ctrl-label">Speed <span class="ctrl-val" id="speed-val">1.00×</span></div>
+      <input type="range" id="speed" min="50" max="200" value="100" step="5">
       <div class="xfade-ends"><span>0.5×</span><span>2.0×</span></div>
       <div id="speed-note" style="display:none;font-size:9px;color:var(--label);letter-spacing:1px;margin-top:2px;">Speed unused for GPU — use Tempo instead</div>
     </div>
@@ -368,14 +368,14 @@
       <div class="panel-label">GPU Parameters</div>
 
       <div class="ctrl-row" style="margin-bottom:9px;">
-        <div class="ctrl-label">Temperature <span class="ctrl-val" id="gpu-temp-val">1.30</span></div>
-        <input type="range" id="gpu-temp" min="50" max="200" value="130" step="5">
-        <div class="xfade-ends"><span>0.50</span><span>2.00</span></div>
+        <div class="ctrl-label">Temperature <span class="ctrl-val" id="gpu-temp-val">1.20</span></div>
+        <input type="range" id="gpu-temp" min="80" max="200" value="120" step="5">
+        <div class="xfade-ends"><span>0.80</span><span>2.00</span></div>
       </div>
 
       <div class="ctrl-row" style="margin-bottom:9px;">
-        <div class="ctrl-label">Top P <span class="ctrl-val" id="gpu-topp-val">0.90</span></div>
-        <input type="range" id="gpu-topp" min="50" max="100" value="90" step="1">
+        <div class="ctrl-label">Top P <span class="ctrl-val" id="gpu-topp-val">0.95</span></div>
+        <input type="range" id="gpu-topp" min="50" max="100" value="95" step="1">
         <div class="xfade-ends"><span>0.50</span><span>1.00</span></div>
       </div>
 
@@ -606,7 +606,7 @@
     vaGender.textContent = genderTag(selA.value);
 
     blendSlider.value     = 0;    blendVal.textContent  = 'A · 100%';
-    speedSlider.value     = 115;  speedVal.textContent  = '1.15×';
+    speedSlider.value     = 100;  speedVal.textContent  = '1.00×';
     pitchSlider.value     = -2;   pitchVal.textContent  = '-2 st';
     bassSlider.value      = -9;   bassVal.textContent   = '-9 dB';
     trebleSlider.value    = -9;   trebleVal.textContent = '-9 dB';
@@ -614,8 +614,8 @@
     roomSlider.value      = 0;    roomVal.textContent   = '0%';
     tempoSlider.value     = 100;  tempoVal.textContent  = '1.00x';
     vibratoSlider.value   = 0;    vibratoVal.textContent = '0%';
-    gpuTempSlider.value   = 130;  gpuTempVal.textContent = '1.30';
-    gpuTopPSlider.value   = 90;   gpuTopPVal.textContent = '0.90';
+    gpuTempSlider.value   = 120;  gpuTempVal.textContent = '1.20';
+    gpuTopPSlider.value   = 95;   gpuTopPVal.textContent = '0.95';
     gpuTopKSlider.value   = 45;   gpuTopKVal.textContent = '45';
     gpuCfgSlider.value    = 30;   gpuCfgVal.textContent  = '3.0×';
     gpuSeedInput.value    = '';
