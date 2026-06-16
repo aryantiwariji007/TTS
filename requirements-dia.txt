@@ -13,8 +13,5 @@
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121
 #   pip install -r requirements-dia.txt
 
---extra-index-url https://download.pytorch.org/whl/nightly/cu128
---pre
-torch>=2.8.0.dev0
-dia @ git+https://github.com/nari-labs/dia.git
+nari-tts @ git+https://github.com/nari-labs/dia.git
 huggingface_hub>=0.23.0

@@ -20,6 +20,7 @@ chunks/
 *.onnx
 *.safetensors
 *.pth
+models/
 
 # Server logs
 server.log
