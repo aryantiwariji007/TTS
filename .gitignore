@@ -14,6 +14,10 @@ wheels/
 book_audio/
 chunks/
 
+# Reference audio for GPU voice cloning (kept in repo)
+!reference_audio/
+!reference_audio/*.mp3
+
 # ML model binaries (large files — not tracked in git)
 *.npz
 *.bin
@@ -37,5 +41,4 @@ server_err.log
 *.txt
 *.pdf
 !requirements.txt
-!requirements-dia.txt
 !demo.*
