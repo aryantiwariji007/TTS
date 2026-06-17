@@ -12,26 +12,45 @@ sys.path.insert(0, SCRIPT_DIR)
 
 from kokoro_onnx import Kokoro
 
-# Dia backend — deferred torch/CUDA imports live inside the module functions,
-# so this import is always safe even when torch is not installed.
+# Kokoro GPU backend — PyTorch Kokoro on CUDA, same voices as CPU path.
+# Commented out while experimenting with Chatterbox TTS voice cloning.
+# To switch back: comment out the Chatterbox block below and uncomment this one.
+# try:
+#     import importlib.util as _ilu
+#     _spec = _ilu.spec_from_file_location(
+#         'kokoro_gpu_backend',
+#         os.path.join(SCRIPT_DIR, 'kokoro_tts', 'backends', 'kokoro_gpu_backend.py'),
+#     )
+#     _gpu_mod = _ilu.module_from_spec(_spec)
+#     _spec.loader.exec_module(_gpu_mod)
+#     GPU_VOICES     = _gpu_mod.GPU_VOICES
+#     _gpu_synth     = _gpu_mod.synthesise
+#     _GPU_AVAILABLE = True
+# except Exception as _e:
+#     GPU_VOICES     = {}
+#     _gpu_synth     = None
+#     _GPU_AVAILABLE = False
+#     print(f"  Kokoro GPU backend unavailable: {_e}")
+
+# Chatterbox TTS GPU backend — voice cloning with British reference audio.
 try:
     import importlib.util as _ilu
     _spec = _ilu.spec_from_file_location(
-        'dia_backend',
-        os.path.join(SCRIPT_DIR, 'kokoro_tts', 'backends', 'dia_backend.py'),
+        'chatterbox_backend',
+        os.path.join(SCRIPT_DIR, 'kokoro_tts', 'backends', 'chatterbox_backend.py'),
     )
-    _dia_mod = _ilu.module_from_spec(_spec)
-    _spec.loader.exec_module(_dia_mod)
-    DIA_VOICES   = _dia_mod.DIA_VOICES
-    _dia_synth   = _dia_mod.synthesise
-    _DIA_AVAILABLE = True
+    _gpu_mod = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_gpu_mod)
+    GPU_VOICES     = _gpu_mod.GPU_VOICES
+    _gpu_synth     = _gpu_mod.synthesise
+    _GPU_AVAILABLE = True
 except Exception as _e:
-    DIA_VOICES   = {}
-    _dia_synth   = None
-    _DIA_AVAILABLE = False
-    print(f"  Dia backend unavailable: {_e}")
+    GPU_VOICES     = {}
+    _gpu_synth     = None
+    _GPU_AVAILABLE = False
+    print(f"  Chatterbox backend unavailable: {_e}")
 
-_DIA_IDS = set(DIA_VOICES.keys())
+_GPU_IDS = set(GPU_VOICES.keys())
 
 MODEL_PATH  = os.path.join(SCRIPT_DIR, 'kokoro-v1.0.onnx')
 VOICES_PATH = os.path.join(SCRIPT_DIR, 'voices-v1.0.bin')
@@ -69,12 +88,6 @@ def split_text(text, size=500):
     if cur:
         chunks.append(' '.join(cur))
     return chunks or [text]
-
-def split_sentences(text):
-    """Split into individual sentences — used for Dia to prevent repetition loops."""
-    import re
-    parts = re.split(r'(?<=[.!?])\s+', text.replace('\n', ' ').strip())
-    return [s.strip() for s in parts if s.strip()]
 
 # ─── Effects ────────────────────────────────────────────────────────────────
 
@@ -226,7 +239,7 @@ def generate():
     voice_a = data.get('voice_a', 'bf_emma')
     voice_b = data.get('voice_b', 'bf_alice')
     blend   = max(0.0, min(1.0, float(data.get('blend',   0.0))))
-    speed   = max(0.5, min(2.0, float(data.get('speed',   1.0))))
+    speed   = max(0.5, min(2.0, float(data.get('speed',   0.95))))
     pitch   =          float(data.get('pitch',   0.0))
     bass    = max(-12, min(12, float(data.get('bass',    0.0))))
     treble  = max(-12, min(12, float(data.get('treble',  0.0))))
@@ -234,41 +247,38 @@ def generate():
     room    = max(0.1, min(1.0, float(data.get('room',   0.5))))
     warmth  = max(0.0, min(1.0, float(data.get('warmth', 0.0))))
     tempo   = max(0.4, min(2.0, float(data.get('tempo',  1.0))))
-    vibrato         = max(0.0, min(1.0,  float(data.get('vibrato',         0.0))))
-    dia_temperature = max(0.5, min(2.0,  float(data.get('dia_temperature', 1.2))))
-    dia_top_p       = max(0.5, min(1.0,  float(data.get('dia_top_p',       0.95))))
-    dia_top_k       = max(1,   min(200,  int(float(data.get('dia_top_k',   45)))))
-    dia_guidance    = max(1.0, min(10.0, float(data.get('dia_guidance',    3.0))))
-    dia_seed_raw    = data.get('dia_seed')
-    dia_seed        = int(dia_seed_raw) if dia_seed_raw not in (None, '', 'null') else None
+    vibrato = max(0.0, min(1.0, float(data.get('vibrato', 0.0))))
 
-    # Resolve which backend to use.  A Dia voice on voice_a always wins; a Dia
-    # voice on voice_b only wins when the crossfade is fully at B (blend >= 0.99).
-    dia_mode    = voice_a in _DIA_IDS or (voice_b in _DIA_IDS and blend >= 0.99)
-    dia_voice   = (voice_b if (blend >= 0.99 and voice_b in _DIA_IDS) else voice_a) if dia_mode else None
+    # GPU voice wins when voice_a is GPU, or voice_b is GPU and blend is fully at B.
+    gpu_mode = voice_a in _GPU_IDS or (voice_b in _GPU_IDS and blend >= 0.99)
 
     all_samples = []
 
-    if dia_mode:
-        if not _DIA_AVAILABLE:
-            return jsonify({'error': 'Dia not installed — run: pip install -r requirements-dia.txt'}), 500
-        sr = 44100
-        print(f"  Dia voice: {dia_voice}")
-        dia_error = None
-        for chunk in split_sentences(text):
+    if gpu_mode:
+        if not _GPU_AVAILABLE:
+            return jsonify({'error': 'GPU backend not available — run: pip install chatterbox-tts'}), 500
+        sr = 24000
+        _primary  = voice_a if voice_a in _GPU_IDS else voice_b
+        _both_gpu = voice_a in _GPU_IDS and voice_b in _GPU_IDS
+        print(f"  GPU voice: {_primary}", flush=True)
+        gpu_error = None
+        for chunk in split_text(text):
             try:
-                s = _dia_synth(chunk, dia_voice,
-                               temperature=dia_temperature, top_p=dia_top_p,
-                               top_k=dia_top_k, guidance_scale=dia_guidance,
-                               seed=dia_seed)
+                result = _gpu_synth(chunk, _primary, speed=speed,
+                                    voice_b=voice_b if _both_gpu else None,
+                                    blend=blend if _both_gpu else 0.0)
+                if isinstance(result, tuple):
+                    s, sr = result   # chatterbox returns (audio, sample_rate)
+                else:
+                    s = result       # kokoro_gpu_backend returns ndarray only
                 if s is not None and len(s) > 0:
                     all_samples.extend(s.tolist() if hasattr(s, 'tolist') else list(s))
             except Exception as e:
-                print(f"  Dia chunk error: {e}")
-                dia_error = str(e)
+                print(f"  GPU chunk error: {e}")
+                gpu_error = str(e)
                 break
         if not all_samples:
-            return jsonify({'error': dia_error or 'Dia synthesis failed'}), 500
+            return jsonify({'error': gpu_error or 'GPU synthesis failed'}), 500
     else:
         k = get_kokoro()
         if 0.01 < blend < 0.99 and voice_b != voice_a:

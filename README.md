@@ -16,7 +16,7 @@ A CLI text-to-speech tool using the Kokoro model, supporting multiple languages,
 - WAV and MP3 output formats
 - Chapter merging capability
 - Detailed debug output option
-- GPU Support
+- GPU voices via Chatterbox TTS (voice cloning from reference audio)
 
 ## Demo
 
@@ -35,6 +35,7 @@ https://github.com/user-attachments/assets/8413e640-59e9-490e-861d-49187e967526
 ## Prerequisites
 
 - Python 3.11-3.12 (Python 3.13+ is not currently supported)
+- NVIDIA GPU with CUDA (for GPU voices only)
 
 ## Installation
 
@@ -147,7 +148,46 @@ wget https://github.com/nazdridoy/kokoro-tts/releases/download/v1.0.0/kokoro-v1.
 
 > The script requires `voices-v1.0.bin` and `kokoro-v1.0.onnx` to be present in the same directory where you run the `kokoro-tts` command.
 
-## Supported voices:
+## Voice Backends
+
+### CPU Voices — Kokoro TTS (ONNX)
+
+All standard voices run on CPU via the Kokoro ONNX model. No GPU required. Supports voice blending.
+
+### GPU Voices — Chatterbox TTS (CUDA)
+
+The **GPU Female** and **GPU Male** voices use [Chatterbox TTS](https://github.com/resemble-ai/chatterbox) by Resemble AI — a 2025 purpose-built TTS model that clones a voice from a short reference audio clip.
+
+**How it works:**
+
+- You provide a short MP3 reference clip for each GPU voice
+- Chatterbox synthesises new speech that matches the tone, accent, and character of that reference
+- No looping, no repetition — clean sentence-by-sentence output
+
+**Setup:**
+
+1. Install Chatterbox:
+```bash
+pip install chatterbox-tts
+```
+
+2. Place your reference audio clips in the `reference_audio/` folder at the project root:
+```
+reference_audio/
+  british_female.mp3   ← reference clip for GPU Female voice
+  british_male.mp3     ← reference clip for GPU Male voice
+```
+
+> Any clear, noise-free MP3 of a British speaker works well — even a 10–30 second clip. The model weights (~2 GB) download automatically from HuggingFace on the first run and are cached locally.
+
+3. Start the web server and select **GPU Female** or **GPU Male** from the Voice A dropdown.
+
+**Notes:**
+- Requires an NVIDIA GPU with CUDA
+- Voice blending is not available when a GPU voice is selected
+- Speed and audio effects (pitch, EQ, reverb, etc.) still apply post-synthesis
+
+## Supported voices (CPU):
 
 | **Category** | **Voices** | **Language Code** |
 | --- | --- | --- |
@@ -289,3 +329,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ## Acknowledgments
 
 - [Kokoro-ONNX](https://github.com/thewh1teagle/kokoro-onnx)
+- [Chatterbox TTS](https://github.com/resemble-ai/chatterbox) by Resemble AI

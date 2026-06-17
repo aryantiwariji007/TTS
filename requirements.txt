@@ -7,3 +7,6 @@ pymupdf4llm
 sounddevice
 soundfile
 flask
+
+# GPU voices (optional, CUDA only)
+chatterbox-tts
